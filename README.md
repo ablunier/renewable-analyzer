@@ -14,6 +14,7 @@ Red Eléctrica's public [REData API](https://www.ree.es/es/datos/apidatos).
 | Build | Vite 8 + `vite-plugin-elm` |
 | Styling | Tailwind CSS v4 via `@tailwindcss/vite` |
 | Server & proxy | Deno, `Deno.serve()` + `@std/http/file-server` |
+| Tooling | Deno only — task runner, npm resolution, lockfile, typecheck |
 | Hosting | Deno Deploy — single origin for app and proxy |
 
 ## Local development
@@ -22,13 +23,20 @@ Two processes. The Deno server owns `/api`; Vite serves the app and forwards
 `/api` to it, so dev and production URL shapes are identical.
 
 ```sh
-npm install
-npm run build      # dist/ must exist for the Deno server to serve anything
+deno install       # resolves npm dependencies and materialises node_modules/
+deno task build    # dist/ must exist for the Deno server to serve anything
 deno task serve    # :8000 — API proxy + static dist/
-npm run dev        # :5173 — Vite dev server, proxies /api to :8000
+deno task dev      # :5173 — Vite dev server, proxies /api to :8000
 ```
 
-Other tasks: `npm test` (elm-test), `npm run format` (elm-format).
+Other tasks: `deno task test` (elm-test), `deno task format` (elm-format).
+
+**Deno is the only runtime — Node is never invoked.** `package.json` remains solely
+as the npm dependency manifest: Vite, Tailwind and the Elm compiler are npm
+packages, and it also carries the `"type": "module"` that Vite needs to read
+`vite.config.js` as ESM. The lockfile is `deno.lock`, which pins all 146 npm
+packages including the platform-specific compiler binaries, so `package-lock.json`
+was removed as redundant.
 
 ## The proxy
 
