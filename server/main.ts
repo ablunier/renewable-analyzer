@@ -1,5 +1,6 @@
 import { serveDir } from "@std/http/file-server";
 
+const DIST_ROOT = new URL("../dist", import.meta.url).pathname;
 const UPSTREAM = "https://apidatos.ree.es";
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
@@ -170,14 +171,14 @@ Deno.serve(async (request: Request) => {
     return await handleApi(url);
   }
 
-  const response = await serveDir(request, { fsRoot: "dist", quiet: true });
+  const response = await serveDir(request, { fsRoot: DIST_ROOT, quiet: true });
 
   if (
     response.status === 404 &&
     request.headers.get("accept")?.includes("text/html")
   ) {
     return await serveDir(new Request(new URL("/index.html", url), request), {
-      fsRoot: "dist",
+      fsRoot: DIST_ROOT,
       quiet: true,
     });
   }
