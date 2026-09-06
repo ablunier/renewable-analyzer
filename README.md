@@ -3,14 +3,11 @@
 Compare renewable generation across Spanish regions and time periods, using
 Red Eléctrica's public [REData API](https://www.ree.es/es/datos/apidatos).
 
-> **Status: skeleton.** Toolchain, server and proxy are working and verified.
-> There is no domain model and no UI yet.
-
 ## Stack
 
 | Piece | Choice |
 |---|---|
-| Frontend | Elm 0.19.2, `Browser.element` *(provisional)* |
+| Frontend | Elm 0.19.2, `Browser.element` |
 | Build | Vite 8 + `vite-plugin-elm` |
 | Styling | Tailwind CSS v4 via `@tailwindcss/vite` |
 | Server & proxy | Deno, `Deno.serve()` + `@std/http/file-server` |
@@ -30,6 +27,7 @@ deno task dev      # :5173 — Vite dev server, proxies /api to :8000
 ```
 
 Other tasks: `deno task test` (elm-test), `deno task format` (elm-format).
+Both carry a Deno-specific workaround — see [Toolchain notes](#toolchain-notes).
 
 **Deno is the only runtime — Node is never invoked.** `package.json` remains solely
 as the npm dependency manifest: Vite, Tailwind and the Elm compiler are npm
@@ -37,6 +35,32 @@ packages, and it also carries the `"type": "module"` that Vite needs to read
 `vite.config.js` as ESM. The lockfile is `deno.lock`, which pins all 146 npm
 packages including the platform-specific compiler binaries, so `package-lock.json`
 was removed as redundant.
+
+## Toolchain notes
+
+Two tasks work around Deno's Node-compatibility layer. Both are one line in
+`deno.json`, and both should be reverted if Deno fixes the underlying behaviour.
+
+**`deno task test` runs `elm-test --workers 1`.** With more than one worker,
+`elm-test` opens a Unix named pipe at `/tmp/elm_test-<pid>.sock` and forks workers
+that connect back to it. Under Deno that handshake races, and a worker dies with
+`connect ENOENT`: 4 failures in 10 runs, against 0 in 15 once pinned. This removes
+the mechanism rather than retrying around it — `Supervisor.js` skips the pipe
+entirely when there is a single worker — and at this suite size it is also faster
+(39 ms against ~310 ms), since nothing pays for the fork and IPC setup. Worth
+revisiting only when the suite is large enough for parallelism to earn its cost;
+the race is Deno-specific and multi-worker is fine under Node.
+
+**`deno task format` calls `./node_modules/.bin/elm-format` by path.** The
+`elm-format` package points its `bin` entry at a native executable — its install
+script overwrites the JS shim with the platform binary. Resolved through Deno's
+canonical `deno.json` path, that file is handed to the JavaScript runtime and dies
+with `SyntaxError: Invalid or unexpected token`. The trigger is the config path
+rather than the command: a byte-identical config under any other filename runs the
+same command line successfully, and `npx elm-format` fails identically. The
+explicit path bypasses the resolver and executes the binary directly. That form is
+POSIX-only — npm writes a `.cmd` shim on Windows — which is the same assumption
+`server/main.ts` already makes.
 
 ## The proxy
 
