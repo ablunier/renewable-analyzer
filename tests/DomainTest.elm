@@ -385,8 +385,93 @@ comparisonSuite =
                     |> Expect.equal True
         , test "direction reads the sign of the change" <|
             \_ ->
-                List.map Comparison.direction [ Just 5, Just -5, Just 0, Nothing ]
-                    |> Expect.equal [ Comparison.Up, Comparison.Down, Comparison.Flat, Comparison.Flat ]
+                List.map Comparison.direction [ 5, -5, 0 ]
+                    |> Expect.equal [ Comparison.Up, Comparison.Down, Comparison.Flat ]
+
+        --  There is deliberately no `direction Nothing` case to test. It used to take a
+        --  `Maybe Float` and answer `Flat` for `Nothing`, which made "did not move" and
+        --  "not measured in one of the two periods" render identically. The signature is
+        --  the fix; a test could only have pinned the bug.
+        , test "a share delta is in percentage points, not in MWh or percent" <|
+            \_ ->
+                -- Eólica: 100/1000 = 10% in A, 140/1000 = 14% in B.
+                Comparison.changeIn Share
+                    (Comparison.sideIn sampleA (Measured 100))
+                    (Comparison.sideIn sampleB (Measured 140))
+                    |> Maybe.map Measure.unitLabel
+                    |> Expect.equal (Just "pp")
+        , test "a share delta differences the two shares, each against its own total" <|
+            \_ ->
+                -- The trap: dividing both readings by one period's total. sampleC has
+                -- twice sampleA's total generation, so 140 MWh is 7% there, not 14%.
+                Comparison.changeIn Share
+                    (Comparison.sideIn sampleA (Measured 100))
+                    (Comparison.sideIn sampleC (Measured 140))
+                    |> Maybe.map Measure.amount
+                    |> Maybe.withDefault 0
+                    |> Expect.within (Expect.Absolute 1.0e-9) -3
+        , test "an energy delta is in MWh" <|
+            \_ ->
+                Comparison.changeIn Energy
+                    (Comparison.sideIn sampleA (Measured 100))
+                    (Comparison.sideIn sampleB (Measured 140))
+                    |> Expect.equal (Just (Megawatthours 40))
+        , test "a change against a missing reading is Nothing in both measures" <|
+            \_ ->
+                Expect.all
+                    [ \_ ->
+                        Comparison.changeIn Energy
+                            (Comparison.sideIn sampleA Missing)
+                            (Comparison.sideIn sampleB (Measured 140))
+                            |> Expect.equal Nothing
+                    , \_ ->
+                        Comparison.changeIn Share
+                            (Comparison.sideIn sampleA (Measured 100))
+                            (Comparison.sideIn sampleB Missing)
+                            |> Expect.equal Nothing
+                    ]
+                    ()
+        , test "a share delta against a zero total is Nothing, not a swing of 100 points" <|
+            \_ ->
+                Comparison.changeIn Share
+                    (Comparison.sideIn sampleA (Measured 100))
+                    (Comparison.sideIn sampleZeroTotal (Measured 140))
+                    |> Expect.equal Nothing
+
+        --  The reason `byChange` exists. In MWh, Nuclear (-20) moves less than Eólica
+        --  (+40) and more than Hidráulica (-15). In share-of-total against sampleC's
+        --  doubled denominator, the order is not the same list re-labelled.
+        , test "share mode re-sorts the rows by percentage-point movement" <|
+            \_ ->
+                Comparison.byChange Share sampleA sampleC
+                    |> List.map (.technology >> Technology.toName)
+                    |> Expect.equal [ "Nuclear", "Eólica", "Hidráulica", "Solar fotovoltaica" ]
+        , test "energy mode keeps byDifference's ordering" <|
+            \_ ->
+                Comparison.byChange Energy sampleA sampleB
+                    |> Expect.equal (Comparison.byDifference sampleA sampleB)
+        , test "both orderings put an unknown change last" <|
+            \_ ->
+                [ Comparison.byChange Energy sampleA sampleB
+                , Comparison.byChange Share sampleA sampleB
+                ]
+                    |> List.map
+                        (List.reverse >> List.head >> Maybe.map (.technology >> Technology.toName))
+                    |> Expect.equal [ Just "Solar fotovoltaica", Just "Solar fotovoltaica" ]
+
+        --  The one-level-up version of the gap-is-not-a-zero rule. `aggregateToMaybe`
+        --  hands back a Partial's known part, so subtracting two of them differences two
+        --  differently shaped subsets and reports the coverage change as generation.
+        , test "a partial aggregate is not a number you may subtract" <|
+            \_ ->
+                Reading.comparable (Partial { known = 155, missing = 1 })
+                    |> Expect.equal Missing
+        , test "an empty aggregate is not a number you may subtract either" <|
+            \_ ->
+                Reading.comparable NoData |> Expect.equal Missing
+        , test "a complete aggregate is" <|
+            \_ ->
+                Reading.comparable (Complete 130) |> Expect.equal (Measured 130)
         ]
 
 
@@ -424,6 +509,24 @@ sampleB =
         , reading SolarFotovoltaica Renewable Missing
         ]
     }
+
+
+{-| Same technologies as `sampleB`, but against **twice** `sampleA`'s total
+generation. That is what makes it useful: every share is halved relative to what a
+single-denominator implementation would produce, so a test that divides both sides by one
+period's total gets a visibly different answer rather than a slightly wrong one.
+-}
+sampleC : Breakdown
+sampleC =
+    { sampleB | period = WholeYear 2024, total = Measured 2000 }
+
+
+{-| A period in which nothing was generated at all. Real: a sparse system in a month with
+no recorded generation. Shares against it are undefined, not zero.
+-}
+sampleZeroTotal : Breakdown
+sampleZeroTotal =
+    { sampleB | period = WholeYear 2024, total = Measured 0 }
 
 
 reading : Technology -> Renewability -> Reading -> TechnologyReading
