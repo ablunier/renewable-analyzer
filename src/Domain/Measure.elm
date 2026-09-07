@@ -2,9 +2,11 @@ module Domain.Measure exposing
     ( Displayable(..)
     , Measure(..)
     , Quantity(..)
+    , amount
     , axisLabel
     , display
     , displayAggregate
+    , share
     , toggle
     , unitLabel
     )
@@ -44,10 +46,23 @@ captured response and **there is no units field anywhere** in the API. MWh is
 documentation knowledge that we assert — which is why the view must state the unit
 explicitly rather than leaving it implied.
 
+`PercentagePoints` is the unit of a **difference between two shares**, and it is a third
+variant rather than a reuse of `Percentage` because the two are not the same number.
+Going from 20% to 25% is `+5` percentage points and also `+25%` relative, and a value
+that says only "%" cannot say which of those it is. Carrying the distinction in the type
+means `unitLabel` answers it, so a percentage-point figure cannot be printed under a "%"
+label by someone forgetting to special-case it.
+
+It is reachable, which is the bar this codebase sets for a variant: `Comparison.changeIn`
+in `Share` mode is its only constructor and a change column is its only reader. `display`
+never produces one — the share of a single reading is a `Percentage` — so the two live
+side by side without either being dead.
+
 -}
 type Quantity
     = Megawatthours Float
     | Percentage Float
+    | PercentagePoints Float
 
 
 {-| What the view is actually handed. Three outcomes, all of them real, and each has to
@@ -98,13 +113,41 @@ unitLabel quantity =
         Percentage _ ->
             "%"
 
+        PercentagePoints _ ->
+            "pp"
 
-{-| The one place a share is ever computed.
 
-Note the guard on the denominator. A zero total is not hypothetical — a sparse system
-in a month with no recorded generation gives exactly that, and `x / 0` in Elm yields
-`Infinity` or `NaN`, which then renders as the string "Infinity" in the UI rather than
-raising.
+{-| The bare number, for a caller that has to format it.
+
+Not a hole in the unit guarantee. `unitLabel` takes the same `Quantity`, so the only way
+to separate a value from its unit is to call this and then not call that — a discipline
+kept in one rendering function (`Main.formatQuantity`) rather than spread across every
+call site. The alternative, a `format : Quantity -> String` in the domain, would put
+thousands separators and decimal places — presentation choices with no domain meaning —
+inside the domain.
+
+-}
+amount : Quantity -> Float
+amount quantity =
+    case quantity of
+        Megawatthours value ->
+            value
+
+        Percentage value ->
+            value
+
+        PercentagePoints value ->
+            value
+
+
+{-| One reading, ready to render under the measure the reader has chosen.
+
+The share arithmetic and its zero-denominator guard live in `share` below, which is the
+one place a share is ever computed; this function's job is to turn its `Maybe` into the
+three-way `Displayable` a cell needs. A missing _reading_ is `NoMeasurement` before the
+measure is even consulted, which is why the first branch comes first: "we have no figure
+for this technology" is true in both measures and must not be reported as an undefined
+share.
 
 We compute share ourselves and never decode the API's `percentage` field: that field's
 denominator includes the `Generación total` row, making it exactly twice the real total,
@@ -121,19 +164,42 @@ display measure total reading =
         ( Energy, Measured value ) ->
             Shown (Megawatthours value)
 
-        ( Share, Measured value ) ->
-            case total of
-                Missing ->
+        ( Share, Measured _ ) ->
+            case share total reading of
+                Just percentage ->
+                    Shown (Percentage percentage)
+
+                Nothing ->
                     ShareUndefined
 
-                Measured totalValue ->
-                    -- Elm has no Float literal patterns, so the zero-denominator
-                    -- guard is a conditional rather than a third branch.
-                    if totalValue == 0 then
-                        ShareUndefined
 
-                    else
-                        Shown (Percentage (value / totalValue * 100))
+{-| The share itself, unwrapped, for the one caller that needs to do arithmetic with it
+rather than show it: `Comparison.changeIn` differences two shares computed against two
+different periods' totals.
+
+Split out of `display` rather than duplicated inside `Comparison`, so that "the one place
+a share is ever computed" stays literally true — including the zero-denominator guard,
+which is the part that is silently wrong everywhere it is reimplemented.
+
+`Nothing` is the same fact `display` reports as `ShareUndefined`: a missing or zero
+denominator, or nothing to divide. It is a `Maybe` here rather than a `Displayable`
+because this returns a number to compute with, not something to put on screen.
+
+-}
+share : Reading -> Reading -> Maybe Float
+share total reading =
+    case ( total, reading ) of
+        ( Measured totalValue, Measured value ) ->
+            -- Elm has no Float literal patterns, so the zero-denominator guard is a
+            -- conditional rather than a third branch.
+            if totalValue == 0 then
+                Nothing
+
+            else
+                Just (value / totalValue * 100)
+
+        _ ->
+            Nothing
 
 
 {-| Same rule applied to a summed figure, so the headline number goes through the same

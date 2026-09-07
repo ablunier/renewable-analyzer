@@ -2,6 +2,7 @@ module Domain.Reading exposing
     ( Aggregate(..)
     , Reading(..)
     , aggregateToMaybe
+    , comparable
     , isMissing
     , sum
     , toMaybe
@@ -107,3 +108,33 @@ aggregateToMaybe aggregate =
 
         NoData ->
             Nothing
+
+
+{-| An aggregate as a single `Reading`, in which **only `Complete` counts as a
+measurement**.
+
+This is the conversion to reach for before subtracting two aggregates, and
+`aggregateToMaybe` above is not. `aggregateToMaybe (Partial { known }) = Just known` is
+right for _displaying_ a headline figure beside its own "2 of 9 not measured" caveat,
+and wrong for differencing two of them: the two sides may be missing different
+technologies, so `knownB - knownA` is a difference between two differently shaped
+subsets. It renders as a change in generation when part of it is a change in coverage —
+the exact mistake `Aggregate` was introduced to prevent, committed one level up where
+the caveat next to each figure no longer travels with the arithmetic.
+
+`Partial` and `NoData` therefore collapse to the same `Missing` here. Not because they
+are the same fact — they are not, and the view words them apart — but because neither is
+a number anyone may subtract.
+
+-}
+comparable : Aggregate -> Reading
+comparable aggregate =
+    case aggregate of
+        Complete value ->
+            Measured value
+
+        Partial _ ->
+            Missing
+
+        NoData ->
+            Missing
