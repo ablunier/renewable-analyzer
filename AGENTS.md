@@ -36,7 +36,9 @@ Compile-check without running: `./node_modules/.bin/elm-test make tests/DomainTe
 Elm 0.19.2 `Browser.element` frontend, one Deno process serving `dist/` and proxying an allowlisted slice of Red Eléctrica's REData API.
 
 ```
-src/Main.elm          Model/update/view — the only module that knows about HTML or Slots
+src/Main.elm          Model/update/effects/controls — the only module that knows Slots
+src/View/Figures.elm  The tables: one period alone, and two with the change between
+src/View/Value.elm    Figures, gaps, units, table furniture — all Html msg
 src/Api/Request.elm   URL construction + Http.Response -> Result Error
 src/Api/Decode.elm    JSON -> Breakdown (needs the requested Period; see below)
 src/Domain/*.elm      Pure types and arithmetic; no Http, no Html
@@ -45,6 +47,8 @@ tests/                DomainTest.elm, ApiTest.elm, Fixtures/{Captured,Synthetic}
 ```
 
 Domain layering (imports only flow downward): `Comparison` → `Breakdown` → {`Reading`, `Technology`, `Region`, `Period`}, with `Measure` over `Reading`. `RemoteData` stands alone.
+
+View layering, same rule: `Main` → `View.Figures` → `View.Value` → `Domain/*`. **The split follows the types, not the layers.** Anything whose signature mentions `Model` or `Msg` stays in `Main`; anything that is `Html msg` — a projection of domain values that cannot originate an event — belongs in `View/`. Do not split `Main` into `Model.elm`/`Update.elm`/`View.elm`: Elm's module graph must be acyclic, so that shape forces `Msg` into a types module nothing owns while leaving every file dependent on the whole `Model`. If a `View/*` function needs to emit a message, take the constructor as an argument (`(Region -> msg) -> …`) rather than importing `Main`.
 
 **One comparison = two independent requests.** REData caps date ranges (5 years for `time_trunc=year`, 24 months for `month`), so a single request spanning both periods can fail where two single-period requests always succeed. `Main` therefore keys everything by `Slot` (`A` | `B`) — `periodFor`/`setPeriod`/`breakdownFor`/`setBreakdown` are the accessors — and each slot holds its own `RemoteData Breakdown`, so one period failing leaves the other on screen.
 
@@ -79,5 +83,5 @@ The proxy is not for CORS (upstream sends `access-control-allow-origin: *`); it 
 - **Doc comments carry the argument, not the description.** Modules and non-obvious functions explain *why* the design is what it is, including alternatives rejected and the condition under which the decision would flip. New code in this style is expected; a change that invalidates an existing rationale should update that prose in the same commit.
 - **Fixtures are segregated by provenance.** `tests/Fixtures/Captured.elm` is verbatim live-API output (evidence); `tests/Fixtures/Synthetic.elm` is hand-written (construction). Never mix them in one module — a reader must not have to check which kind a fixture is.
 - Run `deno task format` before committing; the repo is uniformly `elm-format`ed.
-- Tailwind v4 via `@tailwindcss/vite`; the only CSS file is [src/styles.css](src/styles.css), which just imports Tailwind and points `@source` at the Elm sources. Styling lives in `class` attributes in [src/Main.elm](src/Main.elm).
+- Tailwind v4 via `@tailwindcss/vite`; the only CSS file is [src/styles.css](src/styles.css), which just imports Tailwind and points `@source` at the Elm sources. Styling lives in `class` attributes across [src/Main.elm](src/Main.elm) and [src/View/](src/View/); `@source` globs `src/**/*.elm`, so a new module under `src/` is picked up with no config change.
 - Commit subjects follow `type(scope): summary` — e.g. `feat(app):`, `test(domain):`, `doc:`.

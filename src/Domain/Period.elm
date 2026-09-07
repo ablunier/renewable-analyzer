@@ -9,8 +9,10 @@ module Domain.Period exposing
     , granularity
     , granularityOf
     , label
+    , latestCompleteYear
     , monthNumber
     , second
+    , selectableYears
     , startDate
     , timeTrunc
     )
@@ -312,3 +314,45 @@ monthAbbrev month =
 
         Dec ->
             "Dec"
+
+
+
+-- SELECTABLE WINDOW
+
+
+{-| The years a control may offer, newest first.
+
+The **lower** bound is 2010 and is deliberately a year some regions do not have.
+Coverage is not uniform: Ceuta and Melilla return data for 2009 and 2010, while Galicia
+and Andalucía answer `502` before 2011 (verified against the live API). No single year
+list is therefore valid for every region, so trimming the list to the mainland's window
+would not remove the 502 — it would only hide that the window is per-region while still
+letting a user find the gap. An honest offer plus a legible error beats a list that
+quietly claims uniform coverage.
+
+That is why this list is a property of the API's coverage rather than of the screen, and
+why it lives here: which years are askable is the same kind of fact as which
+`Granularity` values `geo_limit=ccaa` accepts. How the years are _offered_ — one list per
+slot, the other slot's choice not filtered out — is `Main.viewYearControl`'s argument,
+because it is about two controls and this module knows of none.
+
+-}
+selectableYears : List Int
+selectableYears =
+    List.range 2010 latestCompleteYear
+        |> List.reverse
+
+
+{-| The upper bound of the window, because `WholeYear 2026` is a claim the calendar
+cannot support yet: the API answers it with a partial year, which would render under a
+"2026" heading as though it were twelve months of generation.
+
+Known rot, stated rather than hidden: this is a constant, so the window goes stale each
+January. The fix is to pass `Date.now()` in as a flag and derive it — about eight lines,
+`Program () …` becoming `Program Int …`. Not taken here because it is outside this
+slice, not because it is hard.
+
+-}
+latestCompleteYear : Int
+latestCompleteYear =
+    2025
