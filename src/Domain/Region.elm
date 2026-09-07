@@ -3,6 +3,7 @@ module Domain.Region exposing
     , Region(..)
     , all
     , default
+    , fromGeoIdString
     , geoIdToString
     , geoLimit
     , toGeoId
@@ -171,6 +172,31 @@ type GeoId
 geoIdToString : GeoId -> String
 geoIdToString (GeoId id) =
     String.fromInt id
+
+
+{-| Reading a `<select>` back into a `Region`.
+
+Defined as the **inverse of the forward function** — a search over `all` comparing
+`geoIdToString (toGeoId r)` — rather than as a second `case` mapping strings to
+variants. That is the whole point: a hand-written reverse table would be a second copy
+of the id table, correct on the day it was written and free to drift from the first one
+afterwards. Here there is nothing to drift from, and adding a region needs no change.
+
+The id is the key rather than `toName`, because the id is already the identifier this
+app puts on the wire and it is ASCII — no accents making a round trip through the DOM.
+
+The `Maybe` is honest and does not weaken `toGeoId`'s totality. `toGeoId` is total
+because every `Region` has an id; this is partial because an arbitrary string is not
+every `Region`, and the string arrives from the DOM, where anything is possible. The
+caller's job is to make that `Nothing` unreachable rather than to handle it — see
+`Main.onSelect`, which declines to send a message at all.
+
+-}
+fromGeoIdString : String -> Maybe Region
+fromGeoIdString raw =
+    all
+        |> List.filter (\region -> geoIdToString (toGeoId region) == raw)
+        |> List.head
 
 
 {-| The confirmed id table.

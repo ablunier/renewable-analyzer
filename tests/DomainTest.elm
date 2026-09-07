@@ -80,6 +80,26 @@ regionSuite =
         , test "default region is Galicia" <|
             \_ ->
                 Region.toName Region.default |> Expect.equal "Galicia"
+
+        --  `fromGeoIdString` is the inverse of `geoIdToString << toGeoId`, and it is
+        --  defined by searching `all` rather than by a second hand-written table — so
+        --  what this pins is that `all` is complete enough for the search to succeed for
+        --  every variant. A region missing from `all` would round-trip to `Nothing` and
+        --  silently become unselectable in the dropdown.
+        , test "every region round-trips through its geo id" <|
+            \_ ->
+                Region.all
+                    |> List.map
+                        (Region.toGeoId >> Region.geoIdToString >> Region.fromGeoIdString)
+                    |> Expect.equal (List.map Just Region.all)
+
+        --  The `Maybe` has to be real: this value arrives from a `<select>` in the DOM,
+        --  where nothing guarantees it is one of the options we rendered.
+        , test "an id no region owns does not resolve" <|
+            \_ ->
+                [ "9999", "", "17 ", "abc" ]
+                    |> List.map Region.fromGeoIdString
+                    |> Expect.equal [ Nothing, Nothing, Nothing, Nothing ]
         ]
 
 
