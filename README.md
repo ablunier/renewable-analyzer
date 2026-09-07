@@ -318,12 +318,25 @@ deno task dev      # :5173 — Vite dev server, proxies /api to :8000
 Other tasks: `deno task test` (elm-test), `deno task format` (elm-format).
 Both carry a Deno-specific workaround — see [Toolchain notes](#toolchain-notes).
 
-**Deno is the only runtime — Node is never invoked.** `package.json` remains solely
-as the npm dependency manifest: Vite, Tailwind and the Elm compiler are npm
-packages, and it also carries the `"type": "module"` that Vite needs to read
-`vite.config.js` as ESM. The lockfile is `deno.lock`, which pins all 146 npm
-packages including the platform-specific compiler binaries, so `package-lock.json`
-was removed as redundant.
+**Deno is the only runtime — Node is never invoked — and `deno.json` is the only
+manifest.** Vite, Tailwind and the Elm compiler are npm packages, declared as `npm:`
+specifiers in the `imports` map; `deno install` reads them and materialises
+`node_modules/` and the `.bin/` shims the tasks run. Nothing under `src/` imports
+any of them, so the import map is doing duty as a dependency list rather than
+resolving anything — the price of one manifest instead of two.
+
+`package.json` and `package-lock.json` were both removed as redundant: `deno.lock`
+already pins all 146 npm packages, including the platform-specific compiler
+binaries, and dropping the second manifest changes nothing downstream, since Vite
+resolves its plugins out of `node_modules` and never consults the import map. What
+is lost is the `dependencies`/`devDependencies` split and the tools that key off
+`package.json` — GitHub's dependency graph, Dependabot — which is the reason to put
+it back if this ever grows a CI pipeline that wants them.
+
+The config is `vite.config.mjs` rather than `.js`. Vite bundles the config with
+esbuild and parses it as ESM either way, so the extension is not what makes the
+build work; it is there because `"type": "module"` went with `package.json`, and
+without it an editor's TypeScript service reads a bare `.js` as CommonJS.
 
 ## Toolchain notes
 

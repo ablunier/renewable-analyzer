@@ -920,18 +920,14 @@
   },
   "workspace": {
     "dependencies": [
-      "jsr:@std/http@1.1.3"
-    ],
-    "packageJson": {
-      "dependencies": [
-        "npm:@tailwindcss/vite@4.3.3",
-        "npm:elm-format@0.8.8",
-        "npm:elm-test@0.19.2-1",
-        "npm:elm@0.19.2-0",
-        "npm:tailwindcss@4.3.3",
-        "npm:vite-plugin-elm@3.0.1",
-        "npm:vite@8.2.2"
-      ]
-    }
+      "jsr:@std/http@1.1.3",
+      "npm:@tailwindcss/vite@4.3.3",
+      "npm:elm-format@0.8.8",
+      "npm:elm-test@0.19.2-1",
+      "npm:elm@0.19.2-0",
+      "npm:tailwindcss@4.3.3",
+      "npm:vite-plugin-elm@3.0.1",
+      "npm:vite@8.2.2"
+    ]
   }
 }
