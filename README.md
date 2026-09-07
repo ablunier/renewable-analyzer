@@ -1,4 +1,4 @@
-# renewable-analyzer
+# Renewable Analyzer Dashboard
 
 Compare renewable generation across Spanish regions and time periods, using
 Red Eléctrica's public [REData API](https://www.ree.es/es/datos/apidatos).
@@ -12,7 +12,63 @@ Red Eléctrica's public [REData API](https://www.ree.es/es/datos/apidatos).
 | Styling | Tailwind CSS v4 via `@tailwindcss/vite` |
 | Server & proxy | Deno, `Deno.serve()` + `@std/http/file-server` |
 | Tooling | Deno only — task runner, npm resolution, lockfile, typecheck |
-| Hosting | Deno Deploy — single origin for app and proxy |
+
+## Design decisions
+
+Four choices the rest of the code is built around. Each is argued at length in the module
+it lives in; this is the short version.
+
+### `Missing` is a variant, never `0`
+
+A region that generated no wind and a region where wind was not measured are different
+facts, and only one of them belongs in a sum. The API does not force the confusion, it
+invites it: there are no nulls anywhere in any response, so a gap is an *absent array
+entry* and only exists relative to the timeline you asked for — which is why the decoder
+is handed the requested `Period` and constructs `Missing` itself rather than letting a
+ragged series through. The rule then has to survive aggregation, so `Reading.sum` returns
+`Complete | Partial | NoData` rather than a `Float`: adding up the present readings and
+returning a number understates the total silently, where `Partial` forces the view to say
+"12,345 MWh (2 of 9 technologies not measured)". No absent figure renders as a dash
+either, because a dash in a column of numbers is read as a zero.
+
+### Technologies are sorted by the size of the change
+
+Alphabetical order makes the reader scan for what moved, and ordering by size makes them
+scan past the big-but-static technologies; ordering by the magnitude of the difference
+puts the technology that *explains* the change at the top, which is the question the
+screen exists to answer. Technologies whose change is unknown sort last rather than
+first — an absence of evidence is not evidence of a large movement. The rows re-sort when
+the measure toggle is clicked, because MWh and percentage points disagree about the
+biggest mover routinely: a technology can add 400 GWh and still lose share when total
+generation grew faster. That costs stable rows and buys an ordering that stays true in
+both modes, rather than one that quietly stops meaning what the caption says it means.
+
+### `Technology` has an `Unrecognised String` variant, and `Region` does not
+
+The API's technology vocabulary is open and observably unstable — 9 indicators per
+autonomous community against 16 nationally, `Carbón` present 2014–2016 and gone from 2017,
+`Fuel + Gas` and `Hidroeólica` in only two or three of the 19 regions — so a decoder that
+dropped an unknown name would silently understate a region's generation. Spanish
+administrative geography is closed and all 19 ids are confirmed, so `Region` needs no such
+variant and `toGeoId` is total: the difference between the two types is a claim about
+which vocabulary we actually control. An unrecognised technology renders under REData's
+own name rather than as "Unknown", and is the single case where the API's
+`Renovable`/`No-Renovable` field is believed — everywhere else our own classification
+wins, because that field labels non-renewable waste as renewable in 15 of 19 regions.
+
+### `Measure` is a type, not a boolean
+
+Every `Bool` in a program has the same type, so nothing stops one being passed to the
+wrong parameter or read the wrong way round, and `display True total reading` says nothing
+at the call site about which way round `True` is. The measure decides four things — the
+axis label, the change column's heading, the row ordering, and which arithmetic
+`changeIn` performs — and each is a total function over `Energy | Share`, so a third
+measure breaks all four at compile time where an `if`/`else` has no third branch to break.
+`Measure` is a *view* concern rather than a property of the data: one request returns MWh
+and share is derived from it, so the unit guarantee lives in `Quantity`
+(`Megawatthours | Percentage | PercentagePoints`) instead — a number that cannot be
+separated from its unit, and a percentage-point difference that cannot be printed under a
+"%" label.
 
 ## Notes on the REData API
 
